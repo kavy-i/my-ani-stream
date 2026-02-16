@@ -7,32 +7,47 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useApiConfig } from '@/hooks/use-api-config';
 import { ChevronLeft, ChevronRight, Play, List } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+
+function decodeParam(value: string | undefined): string {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 export default function VideoPlayer() {
   const { animeId, episodeId } = useParams<{ animeId: string; episodeId: string }>();
   const { animeProvider, subDub, setSubDub } = useApiConfig();
   const [selectedSource, setSelectedSource] = useState(0);
   const [showEpisodes, setShowEpisodes] = useState(false);
+  const resolvedAnimeId = decodeParam(animeId);
+  const resolvedEpisodeId = decodeParam(episodeId);
 
   const { data: anime } = useQuery({
-    queryKey: ['anime-info', animeId, animeProvider],
-    queryFn: () => animeApi.info(animeId!, animeProvider),
-    enabled: !!animeId,
+    queryKey: ['anime-info', resolvedAnimeId, animeProvider],
+    queryFn: () => animeApi.info(resolvedAnimeId, animeProvider),
+    enabled: !!resolvedAnimeId,
   });
 
   const { data: stream, isLoading: streamLoading } = useQuery({
-    queryKey: ['watch', episodeId, animeProvider],
-    queryFn: () => animeApi.watch(episodeId!, animeProvider),
-    enabled: !!episodeId,
+    queryKey: ['watch', resolvedEpisodeId, animeProvider],
+    queryFn: () => animeApi.watch(resolvedEpisodeId, animeProvider),
+    enabled: !!resolvedEpisodeId,
   });
 
   const title = anime ? getTitle(anime.title) : '';
   const episodes = anime?.episodes || [];
-  const currentIdx = episodes.findIndex(e => e.id === episodeId);
+  const currentIdx = episodes.findIndex(e => e.id === resolvedEpisodeId);
   const prevEp = currentIdx > 0 ? episodes[currentIdx - 1] : null;
   const nextEp = currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
   const currentEp = episodes[currentIdx];
+
+  useEffect(() => {
+    setSelectedSource(0);
+  }, [resolvedEpisodeId, animeProvider]);
 
   const source = stream?.sources?.[selectedSource];
 
@@ -74,14 +89,14 @@ export default function VideoPlayer() {
                 {/* Nav */}
                 {prevEp && (
                   <Button variant="outline" size="sm" asChild>
-                    <Link to={`/watch/${animeId}/${encodeURIComponent(prevEp.id)}`}>
+                    <Link to={`/watch/${encodeURIComponent(resolvedAnimeId)}/${encodeURIComponent(prevEp.id)}`}>
                       <ChevronLeft className="h-4 w-4 mr-1" /> Prev
                     </Link>
                   </Button>
                 )}
                 {nextEp && (
                   <Button variant="outline" size="sm" asChild>
-                    <Link to={`/watch/${animeId}/${encodeURIComponent(nextEp.id)}`}>
+                    <Link to={`/watch/${encodeURIComponent(resolvedAnimeId)}/${encodeURIComponent(nextEp.id)}`}>
                       Next <ChevronRight className="h-4 w-4 ml-1" />
                     </Link>
                   </Button>
@@ -128,9 +143,9 @@ export default function VideoPlayer() {
               {episodes.map(ep => (
                 <Link
                   key={ep.id}
-                  to={`/watch/${animeId}/${encodeURIComponent(ep.id)}`}
+                  to={`/watch/${encodeURIComponent(resolvedAnimeId)}/${encodeURIComponent(ep.id)}`}
                   className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    ep.id === episodeId
+                    ep.id === resolvedEpisodeId
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                   }`}
