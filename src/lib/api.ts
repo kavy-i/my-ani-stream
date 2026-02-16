@@ -8,6 +8,96 @@ async function fetchApi<T>(path: string): Promise<T> {
   return res.json();
 }
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStreamSource(source: unknown, index: number): StreamingSource | null {
+  if (!source || typeof source !== 'object') return null;
+  const src = source as Record<string, unknown>;
+  const url = typeof src.url === 'string' ? src.url : typeof src.file === 'string' ? src.file : '';
+  if (!url) return null;
+
+  return {
+    url,
+    isM3U8: Boolean(src.isM3U8) || url.includes('.m3u8'),
+    quality: typeof src.quality === 'string' ? src.quality : `Source ${index + 1}`,
+  };
+}
+
+function normalizeStreamingResult(payload: unknown): StreamingResult {
+  const data = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+  const rawSources = Array.isArray(data.sources)
+    ? data.sources
+    : Array.isArray(data.result)
+      ? data.result
+      : [];
+
+  const sources = rawSources
+    .map((source, index) => normalizeStreamSource(source, index))
+    .filter((source): source is StreamingSource => source !== null);
+
+  const subtitlesInput = Array.isArray(data.subtitles)
+    ? data.subtitles
+    : Array.isArray(data.tracks)
+      ? data.tracks
+      : [];
+
+  const subtitles = subtitlesInput
+    .map((track) => {
+      if (!track || typeof track !== 'object') return null;
+      const sub = track as Record<string, unknown>;
+      const url = typeof sub.url === 'string' ? sub.url : typeof sub.file === 'string' ? sub.file : '';
+      if (!url) return null;
+      return {
+        url,
+        lang: typeof sub.lang === 'string' ? sub.lang : typeof sub.label === 'string' ? sub.label : 'Unknown',
+      };
+    })
+    .filter((track): track is { url: string; lang: string } => track !== null);
+
+  return {
+    headers: data.headers && typeof data.headers === 'object' ? (data.headers as Record<string, string>) : undefined,
+    sources,
+    subtitles,
+  };
+}
+
+function normalizeMangaPages(payload: unknown): MangaPage[] {
+  const source = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === 'object'
+      ? ((payload as Record<string, unknown>).pages as unknown[] | undefined) ||
+        ((payload as Record<string, unknown>).results as unknown[] | undefined) ||
+        []
+      : [];
+
+  return source
+    .map((page, index) => {
+      if (typeof page === 'string') {
+        return { img: page, page: index + 1 };
+      }
+      if (!page || typeof page !== 'object') return null;
+      const obj = page as Record<string, unknown>;
+      const img =
+        typeof obj.img === 'string'
+          ? obj.img
+          : typeof obj.url === 'string'
+            ? obj.url
+            : typeof obj.src === 'string'
+              ? obj.src
+              : '';
+      if (!img) return null;
+      const pageNum = typeof obj.page === 'number' ? obj.page : index + 1;
+      return { img, page: pageNum };
+    })
+    .filter((page): page is MangaPage => page !== null);
+}
+
 // Types
 export interface AnimeResult {
   id: string;
@@ -95,8 +185,12 @@ export const animeApi = {
   info: (id: string, provider?: string) =>
     fetchApi<AnimeResult>(`/meta/anilist/info/${id}${provider ? `?provider=${provider}` : ''}`),
 
-  watch: (episodeId: string, provider?: string) =>
-    fetchApi<StreamingResult>(`/meta/anilist/watch/${encodeURIComponent(episodeId)}${provider ? `?provider=${provider}` : ''}`),
+  watch: async (episodeId: string, provider?: string) => {
+    const resolvedEpisodeId = safeDecode(episodeId);
+    const query = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+    const result = await fetchApi<unknown>(`/meta/anilist/watch/${encodeURIComponent(resolvedEpisodeId)}${query}`);
+    return normalizeStreamingResult(result);
+  },
 };
 
 // Manga APIs
@@ -111,8 +205,10 @@ export const mangaApi = {
     return fetchApi<MangaResult>(`/manga/${p}/info?id=${encodeURIComponent(id)}`);
   },
 
-  read: (chapterId: string, provider?: string) => {
+  read: async (chapterId: string, provider?: string) => {
     const p = provider || store.getMangaProvider();
-    return fetchApi<MangaPage[]>(`/manga/${p}/read?chapterId=${encodeURIComponent(chapterId)}`);
+    const resolvedChapterId = safeDecode(chapterId);
+    const result = await fetchApi<unknown>(`/manga/${p}/read?chapterId=${encodeURIComponent(resolvedChapterId)}`);
+    return normalizeMangaPages(result);
   },
 };

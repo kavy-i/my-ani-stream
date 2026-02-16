@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useApiConfig } from '@/hooks/use-api-config';
 import { Play } from 'lucide-react';
 
-const PROVIDERS = ['gogoanime', 'zoro', '9anime', 'animefox', 'animepahe'];
+const PROVIDERS = ['gogoanime', 'zoro', 'animekai', 'animepahe', 'enime', 'animefox', '9anime'];
 
 export default function AnimeDetail() {
   const { id } = useParams<{ id: string }>();
